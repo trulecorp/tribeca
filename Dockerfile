@@ -1,4 +1,4 @@
-FROM node:0.12.7
+FROM node:5
 RUN apt-get update
 
 RUN apt-get install -y git
@@ -7,10 +7,9 @@ RUN git clone https://github.com/michaelgrosner/tribeca.git
 
 WORKDIR tribeca
 
-RUN npm install -g grunt-cli tsd forever
+RUN npm install -g grunt-cli typings@0.8.1 forever
 RUN npm install
-
-RUN tsd reinstall -s
+RUN typings install
 RUN grunt compile
 
 EXPOSE 3000 5000

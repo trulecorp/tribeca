@@ -1,4 +1,4 @@
-/// <reference path="../../typings/tsd.d.ts" />
+/// <reference path="../../typings/main.d.ts" />
 
 export interface ITimestamped {
     time : moment.Moment;
@@ -29,7 +29,8 @@ export class GatewayMarketTrade implements ITimestamped {
                 public make_side: Side) { }
 }
 
-export function marketSideEquals(t: MarketSide, other: MarketSide, tol: number = 1e-4) {
+export function marketSideEquals(t: MarketSide, other: MarketSide, tol?: number) {
+    tol = tol || 1e-4;
     if (other == null) return false;
     return Math.abs(t.price - other.price) > tol && Math.abs(t.size - other.size) > tol;
 }
@@ -57,7 +58,7 @@ export class MarketTrade implements ITimestamped {
 }
 
 export enum GatewayType { MarketData, OrderEntry, Position }
-export enum Currency { USD, BTC, LTC, EUR, GBP, CNY }
+export enum Currency { USD, BTC, LTC, EUR, GBP, CNY , ETH }
 export enum ConnectivityStatus { Connected, Disconnected }
 export enum Exchange { Null, HitBtc, OkCoin, AtlasAts, BtcChina, Coinbase, Bitfinex }
 export enum Side { Bid, Ask, Unknown }
@@ -92,7 +93,10 @@ export class SubmitNewOrder implements Order {
                 public timeInForce: TimeInForce,
                 public exchange: Exchange,
                 public generatedTime: moment.Moment,
-                public msg: string = null) {}
+                public preferPostOnly: boolean,
+                public msg?: string) {
+                    this.msg = msg || null;
+                }
 }
 
 export class CancelReplaceOrder {
@@ -116,7 +120,8 @@ export class BrokeredOrder implements Order {
                 public type: OrderType,
                 public price: number,
                 public timeInForce: TimeInForce,
-                public exchange: Exchange) {}
+                public exchange: Exchange,
+                public preferPostOnly: boolean) {}
 }
 
 export class BrokeredReplace implements Order {
@@ -128,7 +133,8 @@ export class BrokeredReplace implements Order {
                 public price: number,
                 public timeInForce: TimeInForce,
                 public exchange: Exchange,
-                public exchangeId: string) {}
+                public exchangeId: string,
+                public preferPostOnly: boolean) {}
 }
 
 export class BrokeredCancel {
@@ -167,6 +173,7 @@ export interface OrderStatusReport {
     exchange? : Exchange;
     computationalLatency? : number;
     version? : number;
+    preferPostOnly?: boolean;
 
     partiallyFilled? : boolean;
     pendingCancel? : boolean;
@@ -198,7 +205,8 @@ export class OrderStatusReportImpl implements OrderStatusReport, ITimestamped {
                 public partiallyFilled: boolean,
                 public pendingCancel: boolean,
                 public pendingReplace: boolean,
-                public cancelRejected: boolean) {}
+                public cancelRejected: boolean,
+                public preferPostOnly: boolean) {}
 
     public toString() {
         var components: string[] = [];
@@ -240,7 +248,9 @@ export class Trade implements ITimestamped {
                 public price: number,
                 public quantity: number,
                 public side: Side,
-                public value: number) {}
+                public value: number,
+                public liquidity: Liquidity,
+                public feeCharged: number) {}
 }
 
 export class CurrencyPosition {
@@ -289,8 +299,9 @@ export class Quote {
     constructor(public price: number,
                 public size: number) {}
 
-    public equals(other: Quote, tol: number = 1e-3) {
-        return Math.abs(this.price - other.price) < tol && Math.abs(this.size - other.size) < tol;
+    private static Tol = 1e-3;
+    public equals(other: Quote) {
+        return Math.abs(this.price - other.price) < Quote.Tol && Math.abs(this.size - other.size) < Quote.Tol;
     }
 }
 
@@ -320,7 +331,7 @@ export function currencyPairEqual(a: CurrencyPair, b: CurrencyPair): boolean {
     return a.base === b.base && a.quote === b.quote;
 }
 
-export enum QuotingMode { Top, Mid, Join, InverseJoin, InverseTop }
+export enum QuotingMode { Top, Mid, Join, InverseJoin, InverseTop, PingPong }
 export enum FairValueModel { BBO, wBBO }
 export enum AutoPositionMode { Off, EwmaBasic }
 
@@ -371,9 +382,15 @@ export class TradeSafety {
     constructor(public buy: number,
                 public sell: number,
                 public combined: number,
+                public buyPing: number,
+                public sellPong: number,
                 public time: moment.Moment) {}
 }
 
 export class TargetBasePositionValue {
     constructor(public data: number, public time: moment.Moment) {}
+}
+
+export class CancelAllOrdersRequest {
+    constructor() {}
 }

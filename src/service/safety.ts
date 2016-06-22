@@ -3,6 +3,7 @@
 /// <reference path="utils.ts" />
 /// <reference path="broker.ts" />
 /// <reference path="../common/messaging.ts" />
+///<reference path="persister.ts"/>
 
 import util = require("util");
 import Config = require("./config");
@@ -16,21 +17,19 @@ import _ = require("lodash");
 import Persister = require("./persister");
 
 export class SafetyCalculator {
-    private _log: Utils.Logger = Utils.log("tribeca:sc");
-
     NewValue = new Utils.Evt();
 
     private _latest: Models.TradeSafety = null;
     public get latest() { return this._latest; }
     public set latest(val: Models.TradeSafety) {
-        if (!this._latest || Math.abs(val.combined - this._latest.combined) > 1e-3) {
+        if (!this._latest || Math.abs(val.combined - this._latest.combined) > 1e-3
+          || Math.abs(val.buyPing - this._latest.buyPing) >= 1e-2
+          || Math.abs(val.sellPong - this._latest.sellPong) >= 1e-2) {
             this._latest = val;
             this.NewValue.trigger(this.latest);
 
             this._persister.persist(this.latest);
             this._publisher.publish(this.latest);
-
-            this._log("New safety value: %j", this.latest);
         }
     }
 
@@ -40,7 +39,7 @@ export class SafetyCalculator {
     constructor(
         private _timeProvider: Utils.ITimeProvider,
         private _repo: Interfaces.IRepository<Models.QuotingParameters>,
-        private _broker: Interfaces.ITradeBroker,
+        private _broker: Broker.OrderBroker,
         private _qlParams: Interfaces.IRepository<Models.QuotingParameters>,
         private _publisher: Messaging.IPublish<Models.TradeSafety>,
         private _persister: Persister.IPersist<Models.TradeSafety>) {
@@ -68,11 +67,34 @@ export class SafetyCalculator {
 
     private isOlderThan(o: Models.Trade, settings: Models.QuotingParameters) {
         var now = this._timeProvider.utcNow();
-        return Math.abs(now.diff(o.time)) > (1000 * settings.tradeRateSeconds);
+        return Math.abs(Utils.fastDiff(now, o.time)) > (1000 * settings.tradeRateSeconds);
     }
 
     private computeQtyLimit = () => {
         var settings = this._repo.latest;
+
+        var buyPing = 0;
+        var sellPong = 0;
+        var buyPq = 0;
+        var sellPq = 0;
+        var _buyPq = 0;
+        var _sellPq = 0;
+        for (var ti = this._broker._trades.length - 1; ti > -1; ti--) {
+          if (this._broker._trades[ti].side == Models.Side.Bid && buyPq<settings.size) {
+            _buyPq = Math.min(settings.size - buyPq, this._broker._trades[ti].quantity);
+            buyPing += this._broker._trades[ti].price * _buyPq;
+            buyPq += _buyPq;
+          }
+          if (this._broker._trades[ti].side == Models.Side.Ask && sellPq<settings.size) {
+            _sellPq = Math.min(settings.size - sellPq, this._broker._trades[ti].quantity);
+            sellPong += this._broker._trades[ti].price * _sellPq;
+            sellPq += _sellPq;
+          }
+          if (buyPq>=settings.size && sellPq>=settings.size) break;
+        }
+
+        if (buyPq) buyPing /= buyPq;
+        if (sellPq) sellPong /= sellPq;
 
         var orderTrades = (input: Models.Trade[], direction: number): Models.Trade[]=> {
             return _.chain(input)
@@ -107,6 +129,6 @@ export class SafetyCalculator {
         var computeSafety = (t: Models.Trade[]) => t.reduce((sum, t) => sum + t.quantity, 0) / this._qlParams.latest.size;
 
         this.latest = new Models.TradeSafety(computeSafety(this._buys), computeSafety(this._sells),
-            computeSafety(this._buys.concat(this._sells)), this._timeProvider.utcNow());
+            computeSafety(this._buys.concat(this._sells)), buyPing, sellPong, this._timeProvider.utcNow());
     };
 }

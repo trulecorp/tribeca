@@ -1,7 +1,11 @@
 /// <reference path="utils.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
-/// <reference path="../../typings/tsd.d.ts" />
+/// <reference path="interfaces.ts"/>
+/// <reference path="persister.ts"/>
+/// <reference path="broker.ts"/>
+/// <reference path="web.ts"/>
+/// <reference path="quoting-engine.ts"/>
 
 import Models = require("../common/models");
 import Messaging = require("../common/messaging");
@@ -20,20 +24,20 @@ export class MarketTradesLoaderSaver {
         
         if (typeof x.quote !== "undefined" && x.quote !== null)
             this._wrapped.loader(x.quote);
-    }
+    };
     
     public saver = (x : Models.MarketTrade) => {
         this._wrapped.saver(x);
         
         if (typeof x.quote !== "undefined" && x.quote !== null)
             this._wrapped.saver(x.quote);
-    }
+    };
     
     constructor(private _wrapped: P.LoaderSaver) {}
 }
 
 export class MarketTradeBroker implements Interfaces.IMarketTradeBroker {
-    _log: Utils.Logger = Utils.log("tribeca:mtbroker");
+    private _log = Utils.log("mt:broker");
 
     // TOOD: is this event needed?
     MarketTrade = new Utils.Evt<Models.MarketTrade>();
@@ -77,9 +81,9 @@ export class MarketTradeBroker implements Interfaces.IMarketTradeBroker {
         initMkTrades: Array<Models.MarketTrade>) {
             
         initMkTrades.forEach(t => this.marketTrades.push(t));
-        this._log("loaded %d market trades", this.marketTrades.length);
+        this._log.info("loaded %d market trades", this.marketTrades.length);
 
-        _marketTradePublisher.registerSnapshot(() => _.last(this.marketTrades, 50));
+        _marketTradePublisher.registerSnapshot(() => _.takeRight(this.marketTrades, 50));
         this._mdGateway.MarketTrade.on(this.handleNewMarketTrade);
     }
 }

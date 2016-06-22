@@ -1,6 +1,7 @@
-/// <reference path="../../typings/tsd.d.ts" />
+/// <reference path="../../typings/main.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
+///<reference path="shared_directives.ts"/>
 
 import angular = require("angular");
 import Models = require("../common/models");
@@ -31,7 +32,7 @@ var MessagesController = ($scope: MessageLoggerScope, $log: ng.ILogService, subs
         showGroupPanel: false,
         rowHeight: 20,
         headerRowHeight: 0,
-        hideHeader: true,
+        showHeader: false,
         groupsCollapsedByDefault: true,
         enableColumnResize: true,
         sortInfo: { fields: ['time'], directions: ['desc'] },

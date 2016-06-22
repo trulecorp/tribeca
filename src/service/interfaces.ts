@@ -1,9 +1,11 @@
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
+/// <reference path="utils.ts"/>
 
 import Utils = require("./utils");
 import Models = require("../common/models");
 import Messaging = require("../common/messaging");
+import q = require("q");
 
 export interface IExchangeDetailsGateway {
     name(): string;
@@ -33,9 +35,14 @@ export interface IOrderEntryGateway extends IGateway {
     sendOrder(order: Models.BrokeredOrder): Models.OrderGatewayActionReport;
     cancelOrder(cancel: Models.BrokeredCancel): Models.OrderGatewayActionReport;
     replaceOrder(replace: Models.BrokeredReplace): Models.OrderGatewayActionReport;
+    
     OrderUpdate: Utils.Evt<Models.OrderStatusReport>;
+    
     cancelsByClientOrderId: boolean;
     generateClientOrderId(): string;
+    
+    supportsCancelAllOpenOrders() : boolean;
+    cancelAllOpenOrders() : q.Promise<number>;
 }
 
 export interface IPositionGateway {
@@ -102,39 +109,6 @@ export interface IEwmaCalculator {
 export interface IRepository<T> {
     NewParameters: Utils.Evt<any>;
     latest: T;
-}
-
-export class Repository<T> implements IRepository<T> {
-    private _log: Utils.Logger = Utils.log("tribeca:" + this._name);
-
-    NewParameters = new Utils.Evt();
-
-    constructor(private _name: string,
-        private _validator: (a: T) => boolean,
-        private _paramsEqual: (a: T, b: T) => boolean,
-        defaultParameter: T,
-        private _rec: Messaging.IReceive<T>,
-        private _pub: Messaging.IPublish<T>) {
-        this._log("Starting parameter:", defaultParameter);
-        _pub.registerSnapshot(() => [this.latest]);
-        _rec.registerReceiver(this.updateParameters);
-        this._latest = defaultParameter;
-    }
-
-    private _latest: T;
-    public get latest(): T {
-        return this._latest;
-    }
-
-    public updateParameters = (newParams: T) => {
-        if (this._validator(newParams) && this._paramsEqual(newParams, this._latest)) {
-            this._latest = newParams;
-            this._log("Changed parameters %j", this.latest);
-            this.NewParameters.trigger();
-        }
-
-        this._pub.publish(this.latest);
-    };
 }
 
 export interface IPublishMessages {

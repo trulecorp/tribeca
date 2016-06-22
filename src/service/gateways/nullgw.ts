@@ -1,5 +1,6 @@
 /// <reference path="../utils.ts" />
 /// <reference path="../../common/models.ts" />
+///<reference path="../interfaces.ts"/>
 
 import Models = require("../../common/models");
 import Utils = require("../utils");
@@ -9,6 +10,9 @@ var uuid = require('node-uuid');
 export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
     OrderUpdate = new Utils.Evt<Models.OrderStatusReport>();
     ConnectChanged = new Utils.Evt<Models.ConnectivityStatus>();
+    
+    supportsCancelAllOpenOrders = () : boolean => { return false; };
+    cancelAllOpenOrders = () : Q.Promise<number> => { return Q(0); };
 
     public cancelsByClientOrderId = true;
 
@@ -17,6 +21,8 @@ export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
     }
 
     sendOrder(order: Models.BrokeredOrder): Models.OrderGatewayActionReport {
+        if (order.timeInForce == Models.TimeInForce.IOC)
+            throw new Error("Cannot send IOCs");
         setTimeout(() => this.trigger(order.orderId, Models.OrderStatus.Working, order), 10);
         return new Models.OrderGatewayActionReport(Utils.date());
     }
@@ -31,7 +37,7 @@ export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
         return this.sendOrder(replace);
     }
 
-    private trigger(orderId: string, status: Models.OrderStatus, order: Models.BrokeredOrder = null) {
+    private trigger(orderId: string, status: Models.OrderStatus, order?: Models.BrokeredOrder) {
         var rpt: Models.OrderStatusReport = {
             orderId: orderId,
             orderStatus: status,
@@ -39,13 +45,14 @@ export class NullOrderGateway implements Interfaces.IOrderEntryGateway {
         };
         this.OrderUpdate.trigger(rpt);
 
-        if (status === Models.OrderStatus.Working) {
+        if (status === Models.OrderStatus.Working && Math.random() < .1) {
             var rpt: Models.OrderStatusReport = {
                 orderId: orderId,
                 orderStatus: status,
                 time: Utils.date(),
                 lastQuantity: order.quantity,
-                lastPrice: order.price
+                lastPrice: order.price,
+                liquidity: Math.random() < .5 ? Models.Liquidity.Make : Models.Liquidity.Take
             };
             setTimeout(() => this.OrderUpdate.trigger(rpt), 1000);
         }

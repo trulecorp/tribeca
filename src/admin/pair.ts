@@ -1,6 +1,6 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
+/// <reference path="shared_directives.ts"/>
 
 import angular = require("angular");
 import Models = require("../common/models");
@@ -57,7 +57,7 @@ class QuotingButtonViewModel extends FormViewModel<boolean> {
     public getClass = () => {
         if (this.pending) return "btn btn-warning";
         if (this.display) return "btn btn-success";
-        return "btn btn-danger"
+        return "btn btn-danger";
     }
 }
 

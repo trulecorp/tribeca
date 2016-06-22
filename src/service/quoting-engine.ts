@@ -2,6 +2,16 @@
 /// <reference path="../common/messaging.ts" />
 /// <reference path="config.ts" />
 /// <reference path="utils.ts" />
+/// <reference path="interfaces.ts"/>
+/// <reference path="quoter.ts"/>
+/// <reference path="safety.ts"/>
+/// <reference path="statistics.ts"/>
+/// <reference path="active-state.ts"/>
+/// <reference path="fair-value.ts"/>
+/// <reference path="market-filtration.ts"/>
+/// <reference path="quoting-parameters.ts"/>
+/// <reference path="position-management.ts"/>
+/// <reference path="./quoting-styles/style-registry.ts"/>
 
 import Config = require("./config");
 import Models = require("../common/models");
@@ -22,7 +32,7 @@ import moment = require('moment');
 import QuotingStyleRegistry = require("./quoting-styles/style-registry");
 
 export class QuotingEngine {
-    private _log: Utils.Logger = Utils.log("tribeca:quotingengine");
+    private _log = Utils.log("quotingengine");
 
     public QuoteChanged = new Utils.Evt<Models.TwoSidedQuote>();
 
@@ -80,7 +90,7 @@ export class QuotingEngine {
 
         var tbp = this._targetPosition.latestTargetPosition;
         if (tbp === null) {
-            this._log("cannot compute a quote since no position report exists!");
+            this._log.warn("cannot compute a quote since no position report exists!");
             return null;
         }
         var targetBasePosition = tbp.data;
@@ -104,8 +114,15 @@ export class QuotingEngine {
         
         var safety = this._safeties.latest;
         if (safety === null) {
-            this._log("cannot compute a quote since trade safety is not yet computed!");
+            this._log.warn("cannot compute a quote since trade safety is not yet computed!");
             return null;
+        }
+        
+        if (params.mode === Models.QuotingMode.PingPong) {
+          if (unrounded.askSz && safety.buyPing && unrounded.askPx < safety.buyPing + params.width)
+            unrounded.askPx = safety.buyPing + params.width;
+          if (unrounded.bidSz && safety.sellPong && unrounded.bidPx > safety.sellPong - params.width)
+            unrounded.bidPx = safety.sellPong - params.width;
         }
         
         if (safety.sell > params.tradesPerMinute) {

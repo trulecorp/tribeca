@@ -1,7 +1,8 @@
-/// <reference path="../../typings/tsd.d.ts" />
 /// <reference path="../common/models.ts" />
 /// <reference path="../common/messaging.ts" />
 /// <amd-dependency path="ui.bootstrap"/>
+/// <reference path="shared_directives.ts"/>
+///<reference path="pair.ts"/>
 
 import angular = require("angular");
 import Models = require("../common/models");
@@ -19,6 +20,7 @@ interface PositionScope extends ng.IScope {
     baseHeldPosition : number;
     quoteHeldPosition : number;
     value : number;
+    quoteValue : number;
 }
 
 var PositionController = ($scope : PositionScope, $log : ng.ILogService, subscriberFactory : Shared.SubscriberFactory) => {
@@ -30,6 +32,7 @@ var PositionController = ($scope : PositionScope, $log : ng.ILogService, subscri
         $scope.baseHeldPosition = null;
         $scope.quoteHeldPosition = null;
         $scope.value = null;
+        $scope.quoteValue = null;
     };
 
     var updatePosition = (position : Models.PositionReport) => {
@@ -40,6 +43,7 @@ var PositionController = ($scope : PositionScope, $log : ng.ILogService, subscri
         $scope.baseHeldPosition = position.baseHeldAmount;
         $scope.quoteHeldPosition = position.quoteHeldAmount;
         $scope.value = position.value;
+        $scope.quoteValue = position.quoteValue;
     };
 
     var positionSubscriber = subscriberFactory.getSubscriber($scope, Messaging.Topics.Position)

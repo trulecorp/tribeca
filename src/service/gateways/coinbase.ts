@@ -1,7 +1,7 @@
-/// <reference path="../../../typings/tsd.d.ts" />
 /// <reference path="../utils.ts" />
 /// <reference path="../../common/models.ts" />
 /// <reference path="nullgw.ts" />
+///<reference path="../interfaces.ts"/>
 
 import Config = require("../config");
 import request = require('request');
@@ -122,6 +122,7 @@ interface CoinbaseOrder {
     time_in_force?: string;
     post_only?: boolean;
     funds?: string;
+    type?: string;
 }
 
 interface CoinbaseOrderAck {
@@ -151,6 +152,7 @@ interface CoinbaseAuthenticatedClient {
     sell(order: CoinbaseOrder, cb: (err?: Error, response?: any, ack?: CoinbaseOrderAck) => void);
     cancelOrder(id: string, cb: (err?: Error, response?: any) => void);
     getOrders(cb: (err?: Error, response?: any, ack?: CoinbaseOpen[]) => void);
+    cancelAllOrders(cb: (err?: Error, response?: string[]) => void);
     getProductTrades(product: string, cb: (err?: Error, response?: any, ack?: CoinbaseRESTTrade[]) => void);
     getAccounts(cb: (err?: Error, response?: any, info?: CoinbaseAccountInformation[]) => void);
     getAccount(accountID: string, cb: (err?: Error, response?: any, info?: CoinbaseAccountInformation) => void);
@@ -435,7 +437,7 @@ class CoinbaseMarketDataGateway implements Interfaces.IMarketDataGateway {
     private raiseMarketData = (t: moment.Moment) => {
         if (typeof this._cachedBids[0] !== "undefined" && typeof this._cachedAsks[0] !== "undefined") {
             if (this._cachedBids[0].price > this._cachedAsks[0].price) {
-                this._log("WARNING: crossed Coinbase market detected! bid:", this._cachedBids[0].price, "ask:", this._cachedAsks[0].price);
+                this._log.warn("Crossed Coinbase market detected! bid:", this._cachedBids[0].price, "ask:", this._cachedAsks[0].price);
                 (<any>this._client).changeState('error');
                 return;
             }
@@ -444,7 +446,7 @@ class CoinbaseMarketDataGateway implements Interfaces.IMarketDataGateway {
         }
     };
 
-    _log: Utils.Logger = Utils.log("tribeca:gateway:CoinbaseMD");
+    private _log = Utils.log("tribeca:gateway:CoinbaseMD");
     constructor(private _orderBook: CoinbaseOrderBook, private _client: CoinbaseOrderEmitter, private _timeProvider: Utils.ITimeProvider) {
         this._client.on("statechange", m => this.onStateChange(m));
         this._client.on("received", m => this.onReceived(m.data, m.time));
@@ -457,6 +459,28 @@ class CoinbaseMarketDataGateway implements Interfaces.IMarketDataGateway {
 
 class CoinbaseOrderEntryGateway implements Interfaces.IOrderEntryGateway {
     OrderUpdate = new Utils.Evt<Models.OrderStatusReport>();
+
+    supportsCancelAllOpenOrders = () : boolean => { return false; };
+    cancelAllOpenOrders = () : Q.Promise<number> => {
+        var d = Q.defer<number>();
+        this._authClient.cancelAllOrders((err, resp) => {
+            if (err) d.reject(err);
+            else  {
+                var t = this._timeProvider.utcNow();
+                for (let cxl_id of resp) {
+                    this.OrderUpdate.trigger({
+                        exchangeId: cxl_id,
+                        time: t,
+                        orderStatus: Models.OrderStatus.Cancelled,
+                        leavesQuantity: 0
+                    });
+                }
+                
+                d.resolve(resp.length);
+            };
+        });
+        return d.promise;
+    };
 
     generateClientOrderId = (): string => {
         return uuid.v1();
@@ -516,7 +540,7 @@ class CoinbaseOrderEntryGateway implements Interfaces.IOrderEntryGateway {
             var t = this._timeProvider.utcNow();
 
             if (ack == null || typeof ack.id === "undefined") {
-                this._log("NO EXCHANGE ID PROVIDED FOR ORDER ID:", order.orderId, err, ack);
+                this._log.warn("NO EXCHANGE ID PROVIDED FOR ORDER ID:", order.orderId, err, ack);
             }
 
             var msg = null;
@@ -554,21 +578,30 @@ class CoinbaseOrderEntryGateway implements Interfaces.IOrderEntryGateway {
         var o: CoinbaseOrder = {
             client_oid: order.orderId,
             size: order.quantity.toString(),
-            price: order.price.toString(),
             product_id: this._symbolProvider.symbol
         };
         
-        switch (order.timeInForce) {
-            case Models.TimeInForce.GTC: 
-                break;
-            case Models.TimeInForce.FOK: 
-                o.time_in_force = "FOK";
-                break;
-            case Models.TimeInForce.IOC: 
-                o.time_in_force = "IOC";
-                break;
-            default: 
-                throw new Error("Cannot map " + Models.TimeInForce[order.timeInForce] + " to a coinbase TIF");
+        if (order.type === Models.OrderType.Limit) {
+            o.price = order.price.toString();
+            
+            if (order.preferPostOnly)
+                o.post_only = true;
+            
+            switch (order.timeInForce) {
+                case Models.TimeInForce.GTC: 
+                    break;
+                case Models.TimeInForce.FOK: 
+                    o.time_in_force = "FOK";
+                    break;
+                case Models.TimeInForce.IOC: 
+                    o.time_in_force = "IOC";
+                    break;
+                default: 
+                    throw new Error("Cannot map " + Models.TimeInForce[order.timeInForce] + " to a coinbase TIF");
+            }
+        }
+        else if (order.type === Models.OrderType.Market) {
+            o.type = "market";
         }
 
         if (order.side === Models.Side.Bid)
@@ -682,7 +715,7 @@ class CoinbaseOrderEntryGateway implements Interfaces.IOrderEntryGateway {
         this.OrderUpdate.trigger(status);
     };
 
-    _log: Utils.Logger = Utils.log("tribeca:gateway:CoinbaseOE");
+    private _log = Utils.log("tribeca:gateway:CoinbaseOE");
     constructor(
         private _timeProvider: Utils.ITimeProvider,
         private _orderData: Interfaces.IOrderStateCache,
@@ -701,7 +734,7 @@ class CoinbaseOrderEntryGateway implements Interfaces.IOrderEntryGateway {
 }
 
 class CoinbasePositionGateway implements Interfaces.IPositionGateway {
-    _log: Utils.Logger = Utils.log("tribeca:gateway:CoinbasePG");
+    private _log = Utils.log("tribeca:gateway:CoinbasePG");
     PositionUpdate = new Utils.Evt<Models.CurrencyPosition>();
 
     private onTick = () => {
@@ -713,7 +746,7 @@ class CoinbasePositionGateway implements Interfaces.IPositionGateway {
                     this.PositionUpdate.trigger(rpt);
                 });
             } catch (error) {
-                Utils.errorLog("Exception while downloading Coinbase positions: " + error, data)
+                this._log.error(error, "Exception while downloading Coinbase positions", data)
             }
         });
     };
@@ -763,6 +796,7 @@ function GetCurrencyEnum(name: string): Models.Currency {
         case "USD": return Models.Currency.USD;
         case "EUR": return Models.Currency.EUR;
         case "GBP": return Models.Currency.GBP;
+        case "ETH": return Models.Currency.ETH;
         default: throw new Error("Unsupported currency " + name);
     }
 }
@@ -773,6 +807,7 @@ function GetCurrencySymbol(c: Models.Currency): string {
         case Models.Currency.GBP: return "GBP";
         case Models.Currency.BTC: return "BTC";
         case Models.Currency.EUR: return "EUR";
+        case Models.Currency.ETH: return "ETH";
         default: throw new Error("Unsupported currency " + Models.Currency[c]);
     }
 }
